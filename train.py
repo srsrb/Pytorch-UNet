@@ -14,10 +14,11 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
 import wandb
-from evaluate import evaluate
+from evaluate import evaluate, evaluate_advection
 from unet import UNet
 from utils.data_loading import BasicDataset, CarvanaDataset
 from utils.dice_score import dice_loss
+from utils.datasetAdvection import FlyingChairsDataset
 
 dir_img = Path('./data/imgs/')
 dir_mask = Path('./data/masks/')
@@ -39,10 +40,18 @@ def train_model(
         gradient_clipping: float = 1.0,
 ):
     # 1. Create dataset
-    try:
-        dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
-    except (AssertionError, RuntimeError, IndexError):
-        dataset = BasicDataset(dir_img, dir_mask, img_scale)
+    # try:
+    #     dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
+    # except (AssertionError, RuntimeError, IndexError):
+    #     dataset = BasicDataset(dir_img, dir_mask, img_scale)
+
+    transform = transforms.Compose([
+    transforms.ToTensor(),  # Convertit en tenseur avec valeurs [0, 1]
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Normalisation
+    ])
+
+    dataset_dir = "users/Enseignants/bereziat/FlyingChairs/data" #~/../../../users/Enseignants/bereziat/FlyingChairs/data
+    dataset = FlyingChairsDataset(dataset_dir=dataset_dir, transform=transform)
 
     # 2. Split into train / validation partitions
     n_val = int(len(dataset) * val_percent)
@@ -87,28 +96,35 @@ def train_model(
         epoch_loss = 0
         with tqdm(total=n_train, desc=f'Epoch {epoch}/{epochs}', unit='img') as pbar:
             for batch in train_loader:
-                images, true_masks = batch['image'], batch['mask']
+                images, flows, targets = batch['image1'], batch['flow'], batch['image2']
 
-                assert images.shape[1] == model.n_channels, \
-                    f'Network has been defined with {model.n_channels} input channels, ' \
-                    f'but loaded images have {images.shape[1]} channels. Please check that ' \
-                    'the images are loaded correctly.'
+                # Vérification des dimensions
+                assert images.shape[1] + flows.shape[1] == model.n_channels, \
+                f'Le modèle attend {model.n_channels} canaux, mais {images.shape[1]} (images) + {flows.shape[1]} (flows) sont donnés.'
 
-                images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
-                true_masks = true_masks.to(device=device, dtype=torch.long)
+                # images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
+                # true_masks = true_masks.to(device=device, dtype=torch.long)
 
+                # with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
+                #     masks_pred = model(images)
+                #     if model.n_classes == 1:
+                #         loss = criterion(masks_pred.squeeze(1), true_masks.float())
+                #         loss += dice_loss(F.sigmoid(masks_pred.squeeze(1)), true_masks.float(), multiclass=False)
+                #     else:
+                #         loss = criterion(masks_pred, true_masks)
+                #         loss += dice_loss(
+                #             F.softmax(masks_pred, dim=1).float(),
+                #             F.one_hot(true_masks, model.n_classes).permute(0, 3, 1, 2).float(),
+                #             multiclass=True
+                #         )
+
+                inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
+                targets = targets.to(device=device, dtype=torch.float32)
+
+                # Calcul des prédictions
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
-                    masks_pred = model(images)
-                    if model.n_classes == 1:
-                        loss = criterion(masks_pred.squeeze(1), true_masks.float())
-                        loss += dice_loss(F.sigmoid(masks_pred.squeeze(1)), true_masks.float(), multiclass=False)
-                    else:
-                        loss = criterion(masks_pred, true_masks)
-                        loss += dice_loss(
-                            F.softmax(masks_pred, dim=1).float(),
-                            F.one_hot(true_masks, model.n_classes).permute(0, 3, 1, 2).float(),
-                            multiclass=True
-                        )
+                    predictions = model(inputs)
+                    loss = F.mse_loss(predictions, targets)  # Perte de régression entre I2 prédite et I2 réelle
 
                 optimizer.zero_grad(set_to_none=True)
                 grad_scaler.scale(loss).backward()
@@ -139,19 +155,14 @@ def train_model(
                             if not (torch.isinf(value.grad) | torch.isnan(value.grad)).any():
                                 histograms['Gradients/' + tag] = wandb.Histogram(value.grad.data.cpu())
 
-                        val_score = evaluate(model, val_loader, device, amp)
+                        val_score = evaluate_advection(model, val_loader, device, amp)
                         scheduler.step(val_score)
 
-                        logging.info('Validation Dice score: {}'.format(val_score))
+                        logging.info('Validation loss: {val_score}')
                         try:
                             experiment.log({
                                 'learning rate': optimizer.param_groups[0]['lr'],
-                                'validation Dice': val_score,
-                                'images': wandb.Image(images[0].cpu()),
-                                'masks': {
-                                    'true': wandb.Image(true_masks[0].float().cpu()),
-                                    'pred': wandb.Image(masks_pred.argmax(dim=1)[0].float().cpu()),
-                                },
+                                'validation loss': val_score,
                                 'step': global_step,
                                 'epoch': epoch,
                                 **histograms
@@ -162,8 +173,7 @@ def train_model(
         if save_checkpoint:
             Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
-            state_dict['mask_values'] = dataset.mask_values
-            torch.save(state_dict, str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
+            torch.save(state_dict, str(dir_checkpoint / f'checkpoint_epoch{epoch}.pth'))
             logging.info(f'Checkpoint {epoch} saved!')
 
 
@@ -194,7 +204,8 @@ if __name__ == '__main__':
     # Change here to adapt to your data
     # n_channels=3 for RGB images
     # n_classes is the number of probabilities you want to get per pixel
-    model = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
+    # model = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
+    model = UNet(n_channels=5, n_classes=1, bilinear=args.bilinear)
     model = model.to(memory_format=torch.channels_last)
 
     logging.info(f'Network:\n'
@@ -204,7 +215,6 @@ if __name__ == '__main__':
 
     if args.load:
         state_dict = torch.load(args.load, map_location=device)
-        del state_dict['mask_values']
         model.load_state_dict(state_dict)
         logging.info(f'Model loaded from {args.load}')
 

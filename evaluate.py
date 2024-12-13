@@ -38,3 +38,32 @@ def evaluate(net, dataloader, device, amp):
 
     net.train()
     return dice_score / max(num_val_batches, 1)
+
+@torch.inference_mode() 
+def evaluate_advection(model, loader, device, amp):
+    model.eval()
+    total_loss = 0
+    num_val_batches = len(loader)
+
+    # itérer sur le jeu de validation
+    with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
+        for batch in tqdm(loader, total=num_val_batches, desc='Validation round', unit='batch', leave=False):
+            images, flows, targets = batch['image1'], batch['flow'], batch['image2']
+            
+            # déplacer les images et cibles sur le bon device
+            images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
+            flows = flows.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
+            targets = targets.to(device=device, dtype=torch.float32)
+
+            # concaténer l'image et le flux pour obtenir l'entrée du modèle
+            inputs = torch.cat((images, flows), dim=1)
+
+            # prédire l'image cible
+            with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
+                predictions = model(inputs)
+
+                # calculer la perte MSE entre les images cibles prédites et réelles
+                loss = F.mse_loss(predictions, targets)
+                total_loss += loss.item()
+
+    return total_loss / num_val_batches
