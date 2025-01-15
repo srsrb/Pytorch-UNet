@@ -48,7 +48,7 @@ def evaluate_advection(model, loader, device, amp):
     # itérer sur le jeu de validation
     with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
         for batch in tqdm(loader, total=num_val_batches, desc='Validation round', unit='batch', leave=False):
-            images, flows, targets = batch['image1'], batch['flow'], batch['image2']
+            images, flows, targets = batch['I1'], batch['flow'], batch['I2']
             
             # déplacer les images et cibles sur le bon device
             images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
