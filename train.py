@@ -73,6 +73,8 @@ def train_model(
 
                 inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
                 targets = targets.to(device=device, dtype=torch.float32)
+                targets = targets.mean(dim=1, keepdim=True)  # Réduit les canaux en une moyenne pour correspondre à un canal
+
 
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     predictions = model(inputs)
