@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 from PIL import Image
 import numpy as np
+import matplotlib.pyplot as plt
 
 from evaluate import evaluate, evaluate_advection
 from unet import UNet
@@ -61,6 +62,9 @@ def train_model(
     criterion = nn.CrossEntropyLoss() if model.n_classes > 1 else nn.BCEWithLogitsLoss()
     global_step = 0
 
+    train_losses = []
+    val_losses = []
+
     for epoch in range(1, epochs + 1):
         model.train()
         epoch_loss = 0
@@ -74,7 +78,6 @@ def train_model(
                 inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
                 targets = targets.to(device=device, dtype=torch.float32)
                 targets = targets.mean(dim=1, keepdim=True)  # Réduit les canaux en une moyenne pour correspondre à un canal
-
 
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     predictions = model(inputs)
@@ -92,17 +95,37 @@ def train_model(
                 epoch_loss += loss.item()
                 pbar.set_postfix(**{'loss (batch)': loss.item()})
 
+        train_losses.append(epoch_loss / len(train_loader))
+
+        # Validation après chaque epoch
+        val_loss = evaluate_advection(model, val_loader, device)
+        val_losses.append(val_loss)
+        logging.info(f'Epoch {epoch}: Validation Loss: {val_loss}')
+
+        # Sauvegarde du checkpoint
         if save_checkpoint:
             Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
             torch.save(state_dict, str(dir_checkpoint / f'checkpoint_epoch{epoch}.pth'))
 
+        # Sauvegarde de l'image prédite
         if epoch == epochs or (epoch % 5 == 0):
             predicted_image = predictions[0].detach().cpu().numpy()
             predicted_image = (predicted_image * 255).astype(np.uint8)
             predicted_image = Image.fromarray(predicted_image.squeeze(), mode='L')
             predicted_image.save(f'predicted_epoch_{epoch}.png')
             logging.info(f'Image prédite sauvegardée pour l epoch {epoch}')
+        
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, epochs + 1), train_losses, label='Training Loss')
+    plt.plot(range(1, epochs + 1), val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.grid()
+    plt.savefig('loss_curve.png')
+    plt.show()
 
 def get_args():
     parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
