@@ -111,10 +111,17 @@ def train_model(
         # Sauvegarde de l'image prédite
         if epoch == epochs or (epoch % 5 == 0):
             predicted_image = predictions[0].detach().cpu().numpy()
+            predicted_image = (predicted_image - predicted_image.min()) / (predicted_image.max() - predicted_image.min())
             predicted_image = (predicted_image * 255).astype(np.uint8)
             predicted_image = Image.fromarray(predicted_image.squeeze(), mode='L')
+            
             predicted_image.save(f'predicted_epoch_{epoch}.png')
             logging.info(f'Image prédite sauvegardée pour l epoch {epoch}')
+
+            target_image = targets[0].detach().cpu().numpy()
+            target_image = (target_image * 255).astype(np.uint8)
+            Image.fromarray(target_image.squeeze(), mode='L').save(f'target_epoch_{epoch}.png')
+
         
     plt.figure(figsize=(10, 5))
     plt.plot(range(1, epochs + 1), train_losses, label='Training Loss')
