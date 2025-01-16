@@ -98,7 +98,7 @@ def train_model(
         train_losses.append(epoch_loss / len(train_loader))
 
         # Validation après chaque epoch
-        val_loss = evaluate_advection(model, val_loader, device)
+        val_loss = evaluate_advection(model, val_loader, device, amp)
         val_losses.append(val_loss)
         logging.info(f'Epoch {epoch}: Validation Loss: {val_loss}')
 
