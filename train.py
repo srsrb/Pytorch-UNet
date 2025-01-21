@@ -59,7 +59,7 @@ def train_model(
                               lr=learning_rate, weight_decay=weight_decay, momentum=momentum, foreach=True)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)
     grad_scaler = torch.amp.GradScaler('cuda', enabled=amp)
-    criterion = nn.CrossEntropyLoss() if model.n_classes > 1 else nn.BCEWithLogitsLoss()
+    criterion = nn.MSELoss()
     global_step = 0
 
     train_losses = []
@@ -72,20 +72,34 @@ def train_model(
             for batch in train_loader:
                 images, flows, targets = batch['I1'], batch['flow'], batch['I2']
 
-                assert images.shape[1] + flows.shape[1] == model.n_channels, \
-                    f'Le modèle attend {model.n_channels} canaux, mais {images.shape[1]} (images) + {flows.shape[1]} (flows) sont donnés.'
+                # Vérifications des NaN et inf dans les entrées
+                assert not torch.isnan(images).any(), "Images contain NaN"
+                assert not torch.isinf(images).any(), "Images contain Inf"
+                assert not torch.isnan(flows).any(), "Flows contain NaN"
+                assert not torch.isinf(flows).any(), "Flows contain Inf"
+                assert not torch.isnan(targets).any(), "Targets contain NaN"
+                assert not torch.isinf(targets).any(), "Targets contain Inf"
 
                 inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
                 targets = targets.to(device=device, dtype=torch.float32)
-                # targets = targets.mean(dim=1, keepdim=True)  # Réduit les canaux en une moyenne pour correspondre à un canal
 
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     predictions = model(inputs)
-                    loss = F.mse_loss(predictions, targets)
+
+                    # Clamping des prédictions pour éviter les valeurs extrêmes
+                    predictions = torch.clamp(predictions, min=0.0, max=1.0)
+
+                    # Vérifications des NaN et inf dans les prédictions
+                    assert not torch.isnan(predictions).any(), "Predictions contain NaN"
+                    assert not torch.isinf(predictions).any(), "Predictions contain Inf"
+
+                    loss = criterion(predictions, targets)
 
                 optimizer.zero_grad(set_to_none=True)
                 grad_scaler.scale(loss).backward()
                 grad_scaler.unscale_(optimizer)
+
+                # Clipping des gradients pour éviter les explosions
                 torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
                 grad_scaler.step(optimizer)
                 grad_scaler.update()
@@ -113,16 +127,15 @@ def train_model(
             predicted_image = predictions[0].detach().cpu().numpy()
             predicted_image = (predicted_image - predicted_image.min()) / (predicted_image.max() - predicted_image.min())
             predicted_image = (predicted_image * 255).astype(np.uint8)
-            predicted_image = Image.fromarray(predicted_image.squeeze(), mode='L')
-            
+            predicted_image = Image.fromarray(predicted_image.transpose(1, 2, 0), mode='RGB')
             predicted_image.save(f'predicted_epoch_{epoch}.png')
             logging.info(f'Image prédite sauvegardée pour l epoch {epoch}')
 
             target_image = targets[0].detach().cpu().numpy()
             target_image = (target_image * 255).astype(np.uint8)
-            Image.fromarray(target_image.squeeze(), mode='L').save(f'target_epoch_{epoch}.png')
+            Image.fromarray(target_image.transpose(1, 2, 0), mode='RGB').save(f'target_epoch_{epoch}.png')
 
-        
+    # Courbes de perte
     plt.figure(figsize=(10, 5))
     plt.plot(range(1, epochs + 1), train_losses, label='Training Loss')
     plt.plot(range(1, epochs + 1), val_losses, label='Validation Loss')
