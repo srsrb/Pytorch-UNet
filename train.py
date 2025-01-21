@@ -77,7 +77,7 @@ def train_model(
 
                 inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
                 targets = targets.to(device=device, dtype=torch.float32)
-                targets = targets.mean(dim=1, keepdim=True)  # Réduit les canaux en une moyenne pour correspondre à un canal
+                # targets = targets.mean(dim=1, keepdim=True)  # Réduit les canaux en une moyenne pour correspondre à un canal
 
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     predictions = model(inputs)
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    model = UNet(n_channels=5, n_classes=1, bilinear=args.bilinear)
+    model = UNet(n_channels=5, n_classes=3, bilinear=args.bilinear)
     model = model.to(memory_format=torch.channels_last)
 
     logging.info(f'Network:\n'
