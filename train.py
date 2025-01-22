@@ -25,6 +25,15 @@ dir_img = Path('./data/imgs/')
 dir_mask = Path('./data/masks/')
 dir_checkpoint = Path('./checkpoints/')
 
+# Initialize weights
+def initialize_weights(model):
+    for m in model.modules():
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            nn.init.xavier_uniform_(m.weight)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+
 def train_model(
         model,
         device,
@@ -86,18 +95,29 @@ def train_model(
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     predictions = model(inputs)
 
-                    # Clamping des prédictions pour éviter les valeurs extrêmes
+                    # Debugging: Vérification des NaN dans les prédictions
+                    if torch.isnan(predictions).any() or torch.isinf(predictions).any():
+                        print(f"NaN/Inf detected in predictions at step {global_step}")
+                        print(f"Inputs: {inputs}")
+                        print(f"Predictions: {predictions}")
+
                     predictions = torch.clamp(predictions, min=0.0, max=1.0)
 
-                    # Vérifications des NaN et inf dans les prédictions
-                    assert not torch.isnan(predictions).any(), "Predictions contain NaN"
-                    assert not torch.isinf(predictions).any(), "Predictions contain Inf"
+                    # Vérifications des NaN et inf dans les prédictions après clamp
+                    assert not torch.isnan(predictions).any(), "Predictions contain NaN after clamping"
+                    assert not torch.isinf(predictions).any(), "Predictions contain Inf after clamping"
 
                     loss = criterion(predictions, targets)
 
                 optimizer.zero_grad(set_to_none=True)
                 grad_scaler.scale(loss).backward()
                 grad_scaler.unscale_(optimizer)
+
+                # Debugging: Vérification des gradients
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                            print(f"Gradient issue detected in {name}")
 
                 # Clipping des gradients pour éviter les explosions
                 torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
@@ -172,6 +192,7 @@ if __name__ == '__main__':
 
     model = UNet(n_channels=5, n_classes=3, bilinear=args.bilinear)
     model = model.to(memory_format=torch.channels_last)
+    initialize_weights(model)
 
     logging.info(f'Network:\n'
                  f'\t{model.n_channels} input channels\n'
