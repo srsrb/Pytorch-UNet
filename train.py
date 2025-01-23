@@ -89,6 +89,10 @@ def train_model(
                 assert not torch.isnan(targets).any(), "Targets contain NaN"
                 assert not torch.isinf(targets).any(), "Targets contain Inf"
 
+                # Normalisation des images et cibles
+                images = (images - images.min()) / (images.max() - images.min())
+                targets = (targets - targets.min()) / (targets.max() - targets.min())
+
                 inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
                 targets = targets.to(device=device, dtype=torch.float32)
 

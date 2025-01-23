@@ -50,6 +50,10 @@ def evaluate_advection(model, loader, device, amp):
         for batch in tqdm(loader, total=num_val_batches, desc='Validation round', unit='batch', leave=False):
             images, flows, targets = batch['I1'], batch['flow'], batch['I2']
             
+            # Normalisation des images et cibles
+            images = (images - images.min()) / (images.max() - images.min())
+            targets = (targets - targets.min()) / (targets.max() - targets.min())
+
             # déplacer les images et cibles sur le bon device
             images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
             flows = flows.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
