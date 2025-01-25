@@ -158,18 +158,21 @@ def train_model(
             target_image = targets[0].detach().cpu().numpy()
             target_image = (target_image * 255).astype(np.uint8)
             Image.fromarray(target_image.transpose(1, 2, 0), mode='RGB').save(f'target_epoch_{epoch}.png')
+            input_image = images[0].detach().cpu().numpy()
+            input_image = (input_image * 255).astype(np.uint8)
+            Image.fromarray(input_image.transpose(1, 2, 0), mode='RGB').save(f'input_epoch_{epoch}.png')
 
-    # Courbes de perte
-    plt.figure(figsize=(10, 5))
-    plt.plot(range(1, epochs + 1), train_losses, label='Training Loss')
-    plt.plot(range(1, epochs + 1), val_losses, label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training and Validation Loss')
-    plt.legend()
-    plt.grid()
-    plt.savefig('loss_curve.png')
-    plt.show()
+            # Courbes de loss
+            plt.figure(figsize=(10, 5))
+            plt.plot(range(1, epochs + 1), train_losses, label='Training Loss')
+            plt.plot(range(1, epochs + 1), val_losses, label='Validation Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title('Training and Validation Loss')
+            plt.legend()
+            plt.grid()
+            plt.savefig('loss_curve.png')
+            plt.show()
 
 def get_args():
     parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
