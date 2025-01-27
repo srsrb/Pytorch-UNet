@@ -133,10 +133,10 @@ def train_model(
 
             target_image = targets[0].detach().cpu().numpy()
             target_image = (target_image * 255).astype(np.uint8)
-            Image.fromarray(target_image.transpose(1, 2, 0), mode='RGB').save(f'target_epoch_{epoch}.png')
+            Image.fromarray(target_image.transpose(1, 2, 0), mode='RGB').save(f'Predictions/target_epoch_{epoch}.png')
             input_image = images[0].detach().cpu().numpy()
             input_image = (input_image * 255).astype(np.uint8)
-            Image.fromarray(input_image.transpose(1, 2, 0), mode='RGB').save(f'input_epoch_{epoch}.png')
+            Image.fromarray(input_image.transpose(1, 2, 0), mode='RGB').save(f'Predictions/input_epoch_{epoch}.png')
 
             # Courbes de loss
             plt.figure(figsize=(10, 5))
