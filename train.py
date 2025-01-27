@@ -65,9 +65,9 @@ def train_model(
     val_loader = DataLoader(val_set, shuffle=False, drop_last=True, **loader_args)
 
     optimizer = optim.RMSprop(model.parameters(),
-                              lr=learning_rate, weight_decay=weight_decay, momentum=momentum, foreach=True)
+                              lr=learning_rate, weight_decay=weight_decay, momentum=momentum, foreach=True) # Adam optimizer ?
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)
-    grad_scaler = torch.amp.GradScaler('cuda', enabled=amp)
+    grad_scaler = torch.amp.GradScaler('cuda', enabled=amp) # Enlever ?
     criterion = nn.MSELoss()
     global_step = 0
 
@@ -81,52 +81,28 @@ def train_model(
             for batch in train_loader:
                 images, flows, targets = batch['I1'], batch['flow'], batch['I2']
 
-                # Vérifications des NaN et inf dans les entrées
-                assert not torch.isnan(images).any(), "Images contain NaN"
-                assert not torch.isinf(images).any(), "Images contain Inf"
-                assert not torch.isnan(flows).any(), "Flows contain NaN"
-                assert not torch.isinf(flows).any(), "Flows contain Inf"
-                assert not torch.isnan(targets).any(), "Targets contain NaN"
-                assert not torch.isinf(targets).any(), "Targets contain Inf"
-
-                # Normalisation des images et cibles
-                images = (images - images.min()) / (images.max() - images.min())
-                targets = (targets - targets.min()) / (targets.max() - targets.min())
+                # images = (images - images.min()) / (images.max() - images.min())
+                # targets = (targets - targets.min()) / (targets.max() - targets.min())
 
                 inputs = torch.cat((images, flows), dim=1).to(device=device, dtype=torch.float32)
                 targets = targets.to(device=device, dtype=torch.float32)
 
-                with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
-                    predictions = model(inputs)
+                # with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp): # Enlever ?
+                predictions = model(inputs)
 
-                    # Debugging: Vérification des NaN dans les prédictions
-                    if torch.isnan(predictions).any() or torch.isinf(predictions).any():
-                        print(f"NaN/Inf detected in predictions at step {global_step}")
-                        print(f"Inputs: {inputs}")
-                        print(f"Predictions: {predictions}")
+                predictions = torch.clamp(predictions, min=0.0, max=1.0) # Enlever ?
 
-                    predictions = torch.clamp(predictions, min=0.0, max=1.0)
-
-                    # Vérifications des NaN et inf dans les prédictions après clamp
-                    assert not torch.isnan(predictions).any(), "Predictions contain NaN after clamping"
-                    assert not torch.isinf(predictions).any(), "Predictions contain Inf after clamping"
-
-                    loss = criterion(predictions, targets)
+                loss = criterion(predictions, targets)
 
                 optimizer.zero_grad(set_to_none=True)
-                grad_scaler.scale(loss).backward()
-                grad_scaler.unscale_(optimizer)
-
-                # Debugging: Vérification des gradients
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                            print(f"Gradient issue detected in {name}")
+                #grad_scaler.scale(loss).backward()
+                #grad_scaler.unscale_(optimizer)
+                loss.backward()
 
                 # Clipping des gradients pour éviter les explosions
                 torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
+                # grad_scaler.step(optimizer)
+                # grad_scaler.update()
 
                 pbar.update(images.shape[0])
                 global_step += 1
@@ -140,7 +116,7 @@ def train_model(
         val_losses.append(val_loss)
         logging.info(f'Epoch {epoch}: Validation Loss: {val_loss}')
 
-        # Sauvegarde du checkpoint
+        # Sauvegarde du checkpoint 
         if save_checkpoint:
             Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
             state_dict = model.state_dict()
