@@ -128,7 +128,7 @@ def train_model(
             predicted_image = (predicted_image - predicted_image.min()) / (predicted_image.max() - predicted_image.min())
             predicted_image = (predicted_image * 255).astype(np.uint8)
             predicted_image = Image.fromarray(predicted_image.transpose(1, 2, 0), mode='RGB')
-            predicted_image.save(f'predicted_epoch_{epoch}.png')
+            predicted_image.save(f'Predictions/predicted_epoch_{epoch}.png')
             logging.info(f'Image prédite sauvegardée pour l epoch {epoch}')
 
             target_image = targets[0].detach().cpu().numpy()
@@ -147,7 +147,7 @@ def train_model(
             plt.title('Training and Validation Loss')
             plt.legend()
             plt.grid()
-            plt.savefig('loss_curve.png')
+            plt.savefig('Predictions/loss_curve.png')
             plt.show()
 
 def get_args():
