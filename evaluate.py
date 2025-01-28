@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
+import torch.nn as nn
 
 from utils.dice_score import multiclass_dice_coeff, dice_coeff
 
@@ -67,7 +68,7 @@ def evaluate_advection(model, loader, device, amp):
                 predictions = model(inputs)
 
                 # calculer la perte MSE entre les images cibles prédites et réelles
-                loss = F.mse_loss(predictions, targets)
+                loss = nn.MSELoss(predictions, targets)
                 total_loss += loss.item()
 
     return total_loss / num_val_batches

@@ -140,8 +140,8 @@ def train_model(
 
             # Courbes de loss
             plt.figure(figsize=(10, 5))
-            plt.plot(range(1, epochs + 1), train_losses, label='Training Loss')
-            plt.plot(range(1, epochs + 1), val_losses, label='Validation Loss')
+            plt.plot(range(1, len(train_losses) + 1), train_losses, label='Training Loss')
+            plt.plot(range(1, len(val_losses) + 1), val_losses, label='Validation Loss')
             plt.xlabel('Epoch')
             plt.ylabel('Loss')
             plt.title('Training and Validation Loss')
