@@ -45,6 +45,7 @@ def evaluate_advection(model, loader, device, amp):
     model.eval()
     total_loss = 0
     num_val_batches = len(loader)
+    criterion = nn.MSELoss()
 
     # itérer sur le jeu de validation
     with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
@@ -68,7 +69,7 @@ def evaluate_advection(model, loader, device, amp):
                 predictions = model(inputs)
 
                 # calculer la perte MSE entre les images cibles prédites et réelles
-                loss = nn.MSELoss(predictions, targets)
+                loss = criterion(predictions, targets)
                 total_loss += loss.item()
 
     return total_loss / num_val_batches
